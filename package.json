@@ -1,5 +1,5 @@
 {
-  "name": "@tracktags/ezthrottle",
+  "name": "@rjpruitt16/ezthrottle",
   "version": "1.0.0",
   "description": "Node.js SDK for EZThrottle - The World's First API Aqueduct",
   "main": "src/index.js",
