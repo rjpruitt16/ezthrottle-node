@@ -1,0 +1,28 @@
+{
+  "name": "@tracktags/ezthrottle",
+  "version": "1.0.0",
+  "description": "Node.js SDK for EZThrottle - The World's First API Aqueduct",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node test/client.test.js"
+  },
+  "keywords": [
+    "ezthrottle",
+    "rate-limiting",
+    "api",
+    "queue",
+    "tracktags"
+  ],
+  "author": "TrackTags",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rjpruitt16/ezthrottle-node"
+  },
+  "dependencies": {
+    "node-fetch": "^2.7.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
