@@ -8,9 +8,6 @@ LABEL fly_launch_runtime="Node.js"
 
 WORKDIR /app
 
-# Set production environment
-ENV NODE_ENV="production"
-
 # Copy SDK source code from parent directory
 COPY src /app/src
 COPY tsconfig.json /app/tsconfig.json
@@ -18,10 +15,14 @@ COPY package.json /app/package.json
 COPY README.md /app/README.md
 
 # Install SDK dependencies (including dev dependencies for build)
+# Must install BEFORE setting NODE_ENV=production
 RUN npm install
 
 # Build TypeScript
 RUN npm run build
+
+# Now set production environment for test app
+ENV NODE_ENV="production"
 
 # Copy test app into subdirectory
 COPY test-app/package*.json /app/test-app/
