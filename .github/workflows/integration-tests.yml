@@ -1,0 +1,62 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: |
+        npm install
+
+    - name: Build TypeScript
+      run: |
+        npm run build
+
+    - name: Install Hurl
+      run: |
+        curl -LO https://github.com/Orange-OpenSource/hurl/releases/download/4.0.0/hurl_4.0.0_amd64.deb
+        sudo dpkg -i hurl_4.0.0_amd64.deb
+
+    - name: Install Fly CLI
+      uses: superfly/flyctl-actions/setup-flyctl@master
+
+    - name: Create fly symlink
+      run: |
+        sudo ln -sf $(which flyctl) /usr/local/bin/fly
+
+    - name: Create .env.test from secrets
+      env:
+        EZTHROTTLE_API_KEY: ${{ secrets.EZTHROTTLE_API_KEY }}
+      run: |
+        cd test-app
+        cat > .env.test << 'EOF'
+        fly secrets set \
+          EZTHROTTLE_API_KEY=${{ secrets.EZTHROTTLE_API_KEY }} \
+          EZTHROTTLE_URL=https://ezthrottle.fly.dev \
+          APP_URL=https://ezthrottle-sdk-node.fly.dev \
+          --app ezthrottle-sdk-node
+        EOF
+        chmod +x .env.test
+
+    - name: Run Integration Tests
+      env:
+        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      run: |
+        cd test-app
+        make integration
