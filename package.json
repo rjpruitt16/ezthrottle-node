@@ -2,8 +2,11 @@
   "name": "ezthrottle",
   "version": "1.1.0",
   "description": "Node.js SDK for EZThrottle - The API Dam for rate-limited services",
-  "main": "src/index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
     "test": "node test/client.test.js"
   },
   "keywords": [
@@ -11,7 +14,8 @@
     "rate-limiting",
     "api",
     "queue",
-    "tracktags"
+    "tracktags",
+    "typescript"
   ],
   "author": "TrackTags",
   "license": "MIT",
@@ -19,9 +23,19 @@
     "type": "git",
     "url": "https://github.com/rjpruitt16/ezthrottle-node"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "dependencies": {
     "node-fetch": "^2.7.0",
     "uuid": "^8.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/node-fetch": "^2.6.0",
+    "@types/uuid": "^8.3.0",
+    "typescript": "^5.0.0"
   },
   "engines": {
     "node": ">=14.0.0"

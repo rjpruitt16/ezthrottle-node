@@ -1,8 +1,53 @@
-const fetch = require('node-fetch');
-const { EZThrottleError, TimeoutError, RateLimitError } = require('./errors');
+import fetch from 'node-fetch';
+import { EZThrottleError, TimeoutError, RateLimitError } from './errors';
+import { EZThrottleConfig, SubmitJobParams, WebhookConfig } from './types';
 
-class EZThrottle {
-  constructor({ apiKey, tracktagsUrl, ezthrottleUrl }) {
+interface ProxyPayload {
+  scope: string;
+  metric_name: string;
+  target_url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: string;
+}
+
+interface ProxyResponse {
+  status: string;
+  error?: string;
+  forwarded_response?: {
+    status_code: number;
+    body?: string;
+  };
+}
+
+interface QueueRequestParams {
+  url: string;
+  webhookUrl?: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  metadata?: Record<string, any>;
+  retryAt?: number;
+}
+
+interface QueueAndWaitParams extends QueueRequestParams {
+  timeout?: number;
+  pollInterval?: number;
+}
+
+interface RequestParams {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+export class EZThrottle {
+  private apiKey: string;
+  private tracktagsUrl: string;
+  private ezthrottleUrl: string;
+
+  constructor({ apiKey, tracktagsUrl, ezthrottleUrl }: EZThrottleConfig) {
     if (!apiKey) {
       throw new Error('apiKey is required');
     }
@@ -53,9 +98,9 @@ class EZThrottle {
     onFailureTimeoutMs,
     idempotentKey,
     retryAt,
-  }) {
+  }: SubmitJobParams): Promise<any> {
     // Build EZThrottle job payload
-    const jobPayload = {
+    const jobPayload: Record<string, any> = {
       url,
       method: method.toUpperCase(),
     };
@@ -80,7 +125,7 @@ class EZThrottle {
     console.log('[SDK] Sending jobPayload with idempotent_key:', jobPayload.idempotent_key);
 
     // Build proxy request
-    const proxyPayload = {
+    const proxyPayload: ProxyPayload = {
       scope: 'customer',
       metric_name: '',
       target_url: `${this.ezthrottleUrl}/api/v1/jobs`,
@@ -102,7 +147,7 @@ class EZThrottle {
 
     // Handle proxy responses
     if (response.status === 429) {
-      const errorData = await response.json();
+      const errorData = await response.json() as any;
       const retryAfterSeconds = response.headers.get('retry-after');
       let calculatedRetryAt = errorData.retry_at;
 
@@ -121,7 +166,7 @@ class EZThrottle {
       throw new EZThrottleError(`Proxy request failed: ${text}`);
     }
 
-    const proxyResponse = await response.json();
+    const proxyResponse = await response.json() as ProxyResponse;
 
     if (proxyResponse.status !== 'allowed') {
       throw new EZThrottleError(
@@ -129,8 +174,8 @@ class EZThrottle {
       );
     }
 
-    const forwarded = proxyResponse.forwarded_response || {};
-    const statusCode = forwarded.status_code;
+    const forwarded = proxyResponse.forwarded_response || {} as { status_code?: number; body?: string };
+    const statusCode = forwarded.status_code || 0;
 
     if (statusCode < 200 || statusCode >= 300) {
       throw new EZThrottleError(
@@ -146,9 +191,19 @@ class EZThrottle {
    * DEPRECATED: Use submitJob() instead
    * Legacy method for backward compatibility
    */
-  async queueRequest({ url, webhookUrl, method = 'GET', headers, body, metadata, retryAt }) {
+  async queueRequest({
+    url,
+    webhookUrl,
+    method = 'GET',
+    headers,
+    body,
+    metadata,
+    retryAt
+  }: QueueRequestParams): Promise<any> {
     // Convert singular webhookUrl to webhooks array
-    const webhooks = webhookUrl ? [{ url: webhookUrl, has_quorum_vote: true }] : undefined;
+    const webhooks: WebhookConfig[] | undefined = webhookUrl
+      ? [{ url: webhookUrl, has_quorum_vote: true }]
+      : undefined;
 
     return this.submitJob({
       url,
@@ -161,7 +216,7 @@ class EZThrottle {
     });
   }
 
-  async request({ url, method = 'GET', headers, body }) {
+  async request({ url, method = 'GET', headers, body }: RequestParams): Promise<any> {
     return fetch(url, {
       method,
       headers,
@@ -179,7 +234,7 @@ class EZThrottle {
     retryAt,
     timeout = 300000,
     pollInterval = 2000,
-  }) {
+  }: QueueAndWaitParams): Promise<any> {
     const result = await this.queueRequest({
       url,
       webhookUrl,
@@ -198,7 +253,7 @@ class EZThrottle {
     const startTime = Date.now();
 
     return new Promise((resolve, reject) => {
-      const checkResult = async () => {
+      const checkResult = async (): Promise<void> => {
         if (Date.now() - startTime > timeout) {
           reject(new TimeoutError(`Timeout waiting for job ${jobId}`));
           return;
@@ -209,5 +264,3 @@ class EZThrottle {
     });
   }
 }
-
-module.exports = EZThrottle;

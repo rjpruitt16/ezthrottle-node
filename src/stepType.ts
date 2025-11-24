@@ -1,12 +1,10 @@
 /**
  * Step execution strategy
  */
-const StepType = {
+export enum StepType {
   /** Client executes first, queue to EZThrottle on error (cost optimization) */
-  FRUGAL: 'frugal',
+  FRUGAL = 'frugal',
 
   /** Server executes immediately via EZThrottle (speed optimization) */
-  PERFORMANCE: 'performance',
-};
-
-module.exports = { StepType };
+  PERFORMANCE = 'performance',
+}

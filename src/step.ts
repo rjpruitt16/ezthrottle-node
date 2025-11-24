@@ -1,8 +1,23 @@
-const fetch = require('node-fetch');
-const { v4: uuidv4 } = require('uuid');
-const { StepType } = require('./stepType');
-const { IdempotentStrategy } = require('./idempotentStrategy');
-const { EZThrottleError } = require('./errors');
+import fetch, { Response } from 'node-fetch';
+import { v4 as uuidv4 } from 'uuid';
+import { StepType } from './stepType';
+import { IdempotentStrategy } from './idempotentStrategy';
+import { EZThrottleError } from './errors';
+import { JobPayload, WebhookConfig, RetryPolicy, FallbackTrigger, IStep } from './types';
+import { EZThrottle } from './client';
+
+interface FallbackStep {
+  step: Step;
+  trigger: Partial<FallbackTrigger>;
+}
+
+interface LocalExecutionResult {
+  status: 'success' | 'failed';
+  executed_locally: boolean;
+  status_code: number;
+  response?: string;
+  error?: string;
+}
 
 /**
  * Fluent builder for EZThrottle job steps
@@ -16,8 +31,45 @@ const { EZThrottleError } = require('./errors');
  *     .onSuccess(successStep)
  *     .execute();
  */
-class Step {
-  constructor(client = null) {
+export class Step implements IStep {
+  private client: EZThrottle | null;
+  private _stepType: StepType;
+
+  // Request configuration
+  private _url: string | null;
+  private _method: string;
+  private _headers: Record<string, string>;
+  private _body: string | null;
+  private _metadata: Record<string, any>;
+
+  // Webhooks configuration
+  private _webhooks: WebhookConfig[];
+  private _webhookQuorum: number;
+
+  // Multi-region configuration
+  private _regions: string[] | null;
+  private _regionPolicy: 'fallback' | 'strict';
+  private _executionMode: 'race' | 'fanout';
+
+  // Retry configuration
+  private _retryPolicy: RetryPolicy | null;
+  private _retryAt: number | null;
+
+  // Deduplication
+  private _idempotentKey: string | null;
+  private _idempotentStrategy: IdempotentStrategy;
+
+  // Frugal-specific: error codes that trigger EZThrottle forwarding
+  private _fallbackOnError: number[];
+  private _localTimeout: number; // milliseconds
+
+  // Workflow chaining
+  private _fallbackSteps: FallbackStep[];
+  private _onSuccessStep: Step | null;
+  private _onFailureStep: Step | null;
+  private _onFailureTimeoutMs: number | null;
+
+  constructor(client: EZThrottle | null = null) {
     this.client = client;
     this._stepType = StepType.PERFORMANCE; // Default
 
@@ -50,83 +102,83 @@ class Step {
     this._localTimeout = 30000; // milliseconds
 
     // Workflow chaining
-    this._fallbackSteps = []; // [{step, trigger}, ...]
+    this._fallbackSteps = [];
     this._onSuccessStep = null;
     this._onFailureStep = null;
     this._onFailureTimeoutMs = null;
   }
 
-  type(stepType) {
+  type(stepType: StepType): this {
     this._stepType = stepType;
     return this;
   }
 
-  url(url) {
+  url(url: string): this {
     this._url = url;
     return this;
   }
 
-  method(method) {
+  method(method: string): this {
     this._method = method.toUpperCase();
     return this;
   }
 
-  headers(headers) {
+  headers(headers: Record<string, string>): this {
     this._headers = headers;
     return this;
   }
 
-  body(body) {
+  body(body: string): this {
     this._body = body;
     return this;
   }
 
-  metadata(metadata) {
+  metadata(metadata: Record<string, any>): this {
     this._metadata = metadata;
     return this;
   }
 
-  webhooks(webhooks) {
+  webhooks(webhooks: WebhookConfig[]): this {
     this._webhooks = webhooks;
     return this;
   }
 
-  webhookQuorum(quorum) {
+  webhookQuorum(quorum: number): this {
     this._webhookQuorum = quorum;
     return this;
   }
 
-  regions(regions) {
+  regions(regions: string[]): this {
     this._regions = regions;
     return this;
   }
 
-  regionPolicy(policy) {
+  regionPolicy(policy: 'fallback' | 'strict'): this {
     this._regionPolicy = policy;
     return this;
   }
 
-  executionMode(mode) {
+  executionMode(mode: 'race' | 'fanout'): this {
     this._executionMode = mode;
     return this;
   }
 
-  retryPolicy(policy) {
+  retryPolicy(policy: RetryPolicy): this {
     this._retryPolicy = policy;
     return this;
   }
 
-  retryAt(timestampMs) {
+  retryAt(timestampMs: number): this {
     this._retryAt = timestampMs;
     return this;
   }
 
-  idempotentKey(key) {
+  idempotentKey(key: string): this {
     this._idempotentKey = key;
     return this;
   }
 
-  idempotentStrategy(strategy) {
+  idempotentStrategy(strategy: IdempotentStrategy): this {
     this._idempotentStrategy = strategy;
     return this;
   }
@@ -135,7 +187,7 @@ class Step {
    * (FRUGAL only) Set error codes that trigger EZThrottle forwarding
    * Default: [429, 500, 502, 503, 504]
    */
-  fallbackOnError(codes) {
+  fallbackOnError(codes: number[]): this {
     this._fallbackOnError = codes;
     return this;
   }
@@ -144,16 +196,28 @@ class Step {
    * (FRUGAL only) Set timeout for local execution
    * Default: 30000ms (30 seconds)
    */
-  localTimeout(timeout) {
+  timeout(timeout: number): this {
     this._localTimeout = timeout;
     return this;
   }
 
   /**
+   * Alias for timeout() to match IStep interface
+   * @deprecated Use timeout() instead
+   */
+  localTimeout(timeout: number): this {
+    return this.timeout(timeout);
+  }
+
+  /**
    * Add fallback step with trigger conditions
    */
-  fallback(step, { triggerOnError = null, triggerOnTimeout = null } = {}) {
-    let trigger = {};
+  fallback(
+    step: Step,
+    options: { triggerOnError?: number[] | null; triggerOnTimeout?: number | null } = {}
+  ): this {
+    const { triggerOnError = null, triggerOnTimeout = null } = options;
+    let trigger: Partial<FallbackTrigger> = {};
     if (triggerOnError) {
       trigger = { type: 'on_error', codes: triggerOnError };
     } else if (triggerOnTimeout) {
@@ -167,7 +231,7 @@ class Step {
   /**
    * Chain step to execute on success
    */
-  onSuccess(step) {
+  onSuccess(step: Step): this {
     this._onSuccessStep = step;
     return this;
   }
@@ -175,7 +239,7 @@ class Step {
   /**
    * Chain step to execute on failure
    */
-  onFailure(step, timeoutMs = null) {
+  onFailure(step: Step, timeoutMs: number | null = null): this {
     this._onFailureStep = step;
     if (timeoutMs) {
       this._onFailureTimeoutMs = timeoutMs;
@@ -184,14 +248,22 @@ class Step {
   }
 
   /**
+   * Set timeout for on_failure workflow
+   */
+  onFailureTimeout(ms: number): this {
+    this._onFailureTimeoutMs = ms;
+    return this;
+  }
+
+  /**
    * Build EZThrottle job payload from step configuration
    */
-  _buildJobPayload() {
+  _buildJobPayload(): JobPayload {
     if (!this._url) {
       throw new Error('URL is required');
     }
 
-    const payload = {
+    const payload: JobPayload = {
       url: this._url,
       method: this._method,
     };
@@ -218,7 +290,10 @@ class Step {
 
     // Add fallback chain
     if (this._fallbackSteps.length > 0) {
-      payload.fallbackJob = this._buildFallbackChain();
+      const fallbackJob = this._buildFallbackChain();
+      if (fallbackJob) {
+        payload.fallbackJob = fallbackJob;
+      }
     }
 
     // Add workflow chaining
@@ -238,17 +313,17 @@ class Step {
   /**
    * Build recursive fallback chain
    */
-  _buildFallbackChain() {
+  _buildFallbackChain(): JobPayload | null {
     if (this._fallbackSteps.length === 0) {
       return null;
     }
 
     // Build chain recursively (first fallback → second fallback → ...)
-    let fallbackJob = null;
+    let fallbackJob: JobPayload | null = null;
     for (let i = this._fallbackSteps.length - 1; i >= 0; i--) {
       const { step, trigger } = this._fallbackSteps[i];
       const currentFallback = step._buildJobPayload();
-      currentFallback.trigger = trigger;
+      (currentFallback as any).trigger = trigger;
 
       // Attach nested fallback
       if (fallbackJob) {
@@ -264,7 +339,7 @@ class Step {
   /**
    * Execute HTTP request locally (FRUGAL mode)
    */
-  async _executeLocal() {
+  private async _executeLocal(): Promise<Response> {
     if (!this._url) {
       throw new Error('URL is required');
     }
@@ -276,7 +351,7 @@ class Step {
       const response = await fetch(this._url, {
         method: this._method,
         headers: this._headers,
-        body: this._body,
+        body: this._body || undefined,
         signal: controller.signal,
       });
 
@@ -291,12 +366,12 @@ class Step {
   /**
    * Try all fallback steps locally
    */
-  async _tryLocalFallbacks(client, errorCode = null) {
+  private async _tryLocalFallbacks(client: EZThrottle, errorCode: number | null = null): Promise<LocalExecutionResult | null> {
     for (const { step, trigger } of this._fallbackSteps) {
       // Check if this fallback should be triggered
       let shouldTrigger = false;
 
-      if (trigger) {
+      if (trigger && trigger.type) {
         const triggerType = trigger.type;
         if (triggerType === 'on_error') {
           const triggerCodes = trigger.codes || [];
@@ -345,7 +420,7 @@ class Step {
    * For FRUGAL: Executes locally first, forwards to EZThrottle on error
    * For PERFORMANCE: Submits to EZThrottle immediately
    */
-  async execute(client = null) {
+  async execute(client: EZThrottle | null = null): Promise<any> {
     const _client = client || this.client;
     if (!_client) {
       throw new Error('Client is required. Pass client to execute() or Step(client)');
@@ -361,7 +436,7 @@ class Step {
   /**
    * Execute FRUGAL workflow (local first, try fallbacks, then queue on error)
    */
-  async _executeFrugal(client) {
+  private async _executeFrugal(client: EZThrottle): Promise<LocalExecutionResult | any> {
     // Try primary step locally
     try {
       const response = await this._executeLocal();
@@ -370,7 +445,7 @@ class Step {
       if (response.status >= 200 && response.status < 300) {
         // Execute on_success workflow if present (async, don't wait)
         if (this._onSuccessStep) {
-          setImmediate(() => this._onSuccessStep.execute(client));
+          setImmediate(() => this._onSuccessStep!.execute(client));
         }
 
         const body = await response.text();
@@ -414,7 +489,7 @@ class Step {
   /**
    * Forward job to EZThrottle
    */
-  async _forwardToEZThrottle(client) {
+  private async _forwardToEZThrottle(client: EZThrottle): Promise<any> {
     const payload = this._buildJobPayload();
     return client.submitJob(payload);
   }
@@ -422,10 +497,8 @@ class Step {
   /**
    * Execute PERFORMANCE workflow (submit to EZThrottle immediately)
    */
-  async _executePerformance(client) {
+  private async _executePerformance(client: EZThrottle): Promise<any> {
     const payload = this._buildJobPayload();
     return client.submitJob(payload);
   }
 }
-
-module.exports = { Step };
