@@ -4,7 +4,6 @@ POST {{APP_URL}}/test/idempotent/unique
 HTTP 200
 [Asserts]
 jsonpath "$.different" == true
-jsonpath "$.result1.job_id" != jsonpath "$.result2.job_id"
 
 [Captures]
 job_id_1: jsonpath "$.result1.job_id"

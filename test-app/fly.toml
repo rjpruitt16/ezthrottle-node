@@ -1,3 +1,8 @@
+# fly.toml app configuration file generated for ezthrottle-sdk-node on 2025-11-23T18:41:03-08:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
 app = 'ezthrottle-sdk-node'
 primary_region = 'iad'
 

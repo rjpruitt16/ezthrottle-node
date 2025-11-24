@@ -3,7 +3,7 @@
 # Integration tests (deploy + test via Hurl)
 integration:
 	@echo "🚀 Deploying test app to Fly..."
-	fly deploy --ha=false
+	@$(MAKE) deploy
 	@echo ""
 	@echo "⏳ Waiting 5s for deployment..."
 	sleep 5
@@ -16,9 +16,13 @@ integration:
 	@echo ""
 	@echo "✅ All tests passed!"
 
-# Deploy to Fly.io
+# Deploy to Fly.io (from parent directory to include SDK source)
 deploy:
-	fly deploy --ha=false
+	@cd .. && fly deploy \
+		--config test-app/fly.toml \
+		--dockerfile test-app/Dockerfile \
+		--app ezthrottle-sdk-node \
+		--ha=false
 
 # Set secrets (run once after fly launch)
 secrets:

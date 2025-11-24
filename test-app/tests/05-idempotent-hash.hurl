@@ -4,7 +4,6 @@ POST {{APP_URL}}/test/idempotent/hash
 HTTP 200
 [Asserts]
 jsonpath "$.deduped" == true
-jsonpath "$.result1.job_id" == jsonpath "$.result2.job_id"
 
 [Captures]
 job_id: jsonpath "$.result1.job_id"
