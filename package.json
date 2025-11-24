@@ -21,7 +21,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rjpruitt16/ezthrottle-node"
+    "url": "git+https://github.com/rjpruitt16/ezthrottle-node.git"
   },
   "files": [
     "dist",
