@@ -1,7 +1,7 @@
 {
   "name": "ezthrottle",
-  "version": "1.0.0",
-  "description": "Node.js SDK for EZThrottle - The World's First API Aqueduct",
+  "version": "1.1.0",
+  "description": "Node.js SDK for EZThrottle - The API Dam for rate-limited services",
   "main": "src/index.js",
   "scripts": {
     "test": "node test/client.test.js"
@@ -20,7 +20,8 @@
     "url": "https://github.com/rjpruitt16/ezthrottle-node"
   },
   "dependencies": {
-    "node-fetch": "^2.7.0"
+    "node-fetch": "^2.7.0",
+    "uuid": "^13.0.0"
   },
   "engines": {
     "node": ">=14.0.0"

@@ -12,18 +12,72 @@ class EZThrottle {
     this.ezthrottleUrl = ezthrottleUrl || 'https://ezthrottle.fly.dev';
   }
 
-  async queueRequest({ url, webhookUrl, method = 'GET', headers, body, metadata, retryAt }) {
+  /**
+   * Submit a job through TracktTags proxy → EZThrottle (NEW API with full features)
+   *
+   * @param {Object} options - Job configuration
+   * @param {string} options.url - Target URL to request
+   * @param {string} [options.method='GET'] - HTTP method
+   * @param {Object} [options.headers] - Request headers
+   * @param {string} [options.body] - Request body
+   * @param {Object} [options.metadata] - Custom metadata
+   * @param {Array} [options.webhooks] - Array of webhook configs: [{url, regions, hasQuorumVote}]
+   * @param {number} [options.webhookQuorum=1] - Minimum webhooks that must succeed
+   * @param {Array<string>} [options.regions] - Regions to execute in (e.g., ['iad', 'lax', 'ord'])
+   * @param {string} [options.regionPolicy='fallback'] - 'fallback' or 'strict'
+   * @param {string} [options.executionMode='race'] - 'race' or 'fanout'
+   * @param {Object} [options.retryPolicy] - Retry configuration
+   * @param {Object} [options.fallbackJob] - Recursive fallback configuration
+   * @param {Object} [options.onSuccess] - Job to spawn on success
+   * @param {Object} [options.onFailure] - Job to spawn on failure
+   * @param {number} [options.onFailureTimeoutMs] - Timeout before triggering onFailure
+   * @param {string} [options.idempotentKey] - Deduplication key
+   * @param {number} [options.retryAt] - Timestamp (ms) when job can be retried
+   * @returns {Promise<Object>} - {job_id, status, ...}
+   */
+  async submitJob({
+    url,
+    method = 'GET',
+    headers,
+    body,
+    metadata,
+    webhooks,
+    webhookQuorum = 1,
+    regions,
+    regionPolicy = 'fallback',
+    executionMode = 'race',
+    retryPolicy,
+    fallbackJob,
+    onSuccess,
+    onFailure,
+    onFailureTimeoutMs,
+    idempotentKey,
+    retryAt,
+  }) {
+    // Build EZThrottle job payload
     const jobPayload = {
       url,
-      webhook_url: webhookUrl,
       method: method.toUpperCase(),
     };
 
+    // Add optional parameters
     if (headers) jobPayload.headers = headers;
     if (body) jobPayload.body = body;
     if (metadata) jobPayload.metadata = metadata;
+    if (webhooks) jobPayload.webhooks = webhooks;
+    if (webhookQuorum !== 1) jobPayload.webhook_quorum = webhookQuorum;
+    if (regions) jobPayload.regions = regions;
+    if (regionPolicy !== 'fallback') jobPayload.region_policy = regionPolicy;
+    if (executionMode !== 'race') jobPayload.execution_mode = executionMode;
+    if (retryPolicy) jobPayload.retry_policy = retryPolicy;
+    if (fallbackJob) jobPayload.fallback_job = fallbackJob;
+    if (onSuccess) jobPayload.on_success = onSuccess;
+    if (onFailure) jobPayload.on_failure = onFailure;
+    if (onFailureTimeoutMs !== undefined) jobPayload.on_failure_timeout_ms = onFailureTimeoutMs;
+    if (idempotentKey) jobPayload.idempotent_key = idempotentKey;
     if (retryAt !== undefined) jobPayload.retry_at = retryAt;
 
+    // Build proxy request
     const proxyPayload = {
       scope: 'customer',
       metric_name: '',
@@ -44,6 +98,7 @@ class EZThrottle {
       body: JSON.stringify(proxyPayload),
     });
 
+    // Handle proxy responses
     if (response.status === 429) {
       const errorData = await response.json();
       const retryAfterSeconds = response.headers.get('retry-after');
@@ -73,8 +128,9 @@ class EZThrottle {
     }
 
     const forwarded = proxyResponse.forwarded_response || {};
+    const statusCode = forwarded.status_code;
 
-    if (forwarded.status_code !== 201) {
+    if (statusCode < 200 || statusCode >= 300) {
       throw new EZThrottleError(
         `EZThrottle job creation failed: ${forwarded.body || 'Unknown error'}`
       );
@@ -82,6 +138,25 @@ class EZThrottle {
 
     const ezthrottleResponse = JSON.parse(forwarded.body || '{}');
     return ezthrottleResponse;
+  }
+
+  /**
+   * DEPRECATED: Use submitJob() instead
+   * Legacy method for backward compatibility
+   */
+  async queueRequest({ url, webhookUrl, method = 'GET', headers, body, metadata, retryAt }) {
+    // Convert singular webhookUrl to webhooks array
+    const webhooks = webhookUrl ? [{ url: webhookUrl, has_quorum_vote: true }] : undefined;
+
+    return this.submitJob({
+      url,
+      method,
+      headers,
+      body,
+      metadata,
+      webhooks,
+      retryAt,
+    });
   }
 
   async request({ url, method = 'GET', headers, body }) {

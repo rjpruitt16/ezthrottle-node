@@ -1,0 +1,16 @@
+{
+  "name": "ezthrottle-test-app",
+  "version": "1.0.0",
+  "description": "Integration test app for EZThrottle Node.js SDK",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ezthrottle": "file:.."
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
