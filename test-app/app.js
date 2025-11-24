@@ -110,7 +110,7 @@ app.post('/test/performance/basic', async (req, res) => {
 
     res.json({
       test: 'performance_basic',
-      idempotent_key: testKey,
+      idempotent_key: result.idempotent_key,
       result,
     });
   } catch (error) {
@@ -140,7 +140,7 @@ app.post('/test/performance/racing', async (req, res) => {
 
     res.json({
       test: 'performance_racing',
-      idempotent_key: testKey,
+      idempotent_key: result.idempotent_key,
       result,
     });
   } catch (error) {
@@ -179,7 +179,7 @@ app.post('/test/performance/fallback-chain', async (req, res) => {
 
     res.json({
       test: 'performance_fallback_chain',
-      idempotent_key: testKey,
+      idempotent_key: result.idempotent_key,
       result,
     });
   } catch (error) {
