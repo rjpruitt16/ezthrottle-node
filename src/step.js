@@ -201,35 +201,35 @@ class Step {
     if (this._body) payload.body = this._body;
     if (Object.keys(this._metadata).length > 0) payload.metadata = this._metadata;
     if (this._webhooks.length > 0) payload.webhooks = this._webhooks;
-    if (this._webhookQuorum !== 1) payload.webhook_quorum = this._webhookQuorum;
+    if (this._webhookQuorum !== 1) payload.webhookQuorum = this._webhookQuorum;
     if (this._regions) payload.regions = this._regions;
-    if (this._regionPolicy !== 'fallback') payload.region_policy = this._regionPolicy;
-    if (this._executionMode !== 'race') payload.execution_mode = this._executionMode;
-    if (this._retryPolicy) payload.retry_policy = this._retryPolicy;
-    if (this._retryAt !== null) payload.retry_at = this._retryAt;
+    if (this._regionPolicy !== 'fallback') payload.regionPolicy = this._regionPolicy;
+    if (this._executionMode !== 'race') payload.executionMode = this._executionMode;
+    if (this._retryPolicy) payload.retryPolicy = this._retryPolicy;
+    if (this._retryAt !== null) payload.retryAt = this._retryAt;
 
     // Handle idempotent key based on strategy
     if (this._idempotentKey) {
-      payload.idempotent_key = this._idempotentKey;
+      payload.idempotentKey = this._idempotentKey;
     } else if (this._idempotentStrategy === IdempotentStrategy.UNIQUE) {
-      payload.idempotent_key = uuidv4();
+      payload.idempotentKey = uuidv4();
     }
     // else: HASH strategy - let backend generate deterministic hash
 
     // Add fallback chain
     if (this._fallbackSteps.length > 0) {
-      payload.fallback_job = this._buildFallbackChain();
+      payload.fallbackJob = this._buildFallbackChain();
     }
 
     // Add workflow chaining
     if (this._onSuccessStep) {
-      payload.on_success = this._onSuccessStep._buildJobPayload();
+      payload.onSuccess = this._onSuccessStep._buildJobPayload();
     }
     if (this._onFailureStep) {
-      payload.on_failure = this._onFailureStep._buildJobPayload();
+      payload.onFailure = this._onFailureStep._buildJobPayload();
     }
     if (this._onFailureTimeoutMs !== null) {
-      payload.on_failure_timeout_ms = this._onFailureTimeoutMs;
+      payload.onFailureTimeoutMs = this._onFailureTimeoutMs;
     }
 
     return payload;
@@ -252,7 +252,7 @@ class Step {
 
       // Attach nested fallback
       if (fallbackJob) {
-        currentFallback.fallback_job = fallbackJob;
+        currentFallback.fallbackJob = fallbackJob;
       }
 
       fallbackJob = currentFallback;

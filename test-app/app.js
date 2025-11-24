@@ -16,6 +16,7 @@
  */
 
 const express = require('express');
+const { v4: uuidv4 } = require('uuid');
 const { EZThrottle, Step, StepType, IdempotentStrategy } = require('ezthrottle');
 
 const app = express();
@@ -97,7 +98,8 @@ app.post('/test/performance/basic', async (req, res) => {
    *
    * Returns immediately with job_id. Hurl test polls /webhooks/{job_id}
    */
-  const testKey = `performance_basic_${Date.now()}`;
+  const testKey = `performance_basic_${uuidv4()}`;
+  console.log(`[TEST] Generated testKey: ${testKey}`);
 
   try {
     const result = await new Step(client)
@@ -124,7 +126,7 @@ app.post('/test/performance/racing', async (req, res) => {
    *
    * Races across 3 regions. Returns job_id immediately.
    */
-  const testKey = `performance_racing_${Date.now()}`;
+  const testKey = `performance_racing_${uuidv4()}`;
 
   try {
     const result = await new Step(client)
@@ -154,7 +156,7 @@ app.post('/test/performance/fallback-chain', async (req, res) => {
    *
    * Primary fails (500) → Fallback1 → Fallback2 succeeds
    */
-  const testKey = `fallback_chain_${Date.now()}`;
+  const testKey = `fallback_chain_${uuidv4()}`;
 
   try {
     const result = await new Step(client)
@@ -193,8 +195,8 @@ app.post('/test/workflow/on-success', async (req, res) => {
    *
    * Parent completes → Child job spawned (2 webhooks expected)
    */
-  const parentKey = `on_success_parent_${Date.now()}`;
-  const childKey = `on_success_child_${Date.now()}`;
+  const parentKey = `on_success_parent_${uuidv4()}`;
+  const childKey = `on_success_child_${uuidv4()}`;
 
   try {
     const result = await new Step(client)
@@ -230,7 +232,7 @@ app.post('/test/idempotent/hash', async (req, res) => {
    *
    * Backend generates same hash for identical requests
    */
-  const runId = Date.now();
+  const runId = uuidv4();
 
   try {
     // No custom key - backend generates hash from (url, method, body)
@@ -268,8 +270,8 @@ app.post('/test/idempotent/unique', async (req, res) => {
    *
    * Different keys allow duplicate requests
    */
-  const key1 = `idempotent_unique_1_${Date.now()}`;
-  const key2 = `idempotent_unique_2_${Date.now()}`;
+  const key1 = `idempotent_unique_1_${uuidv4()}`;
+  const key2 = `idempotent_unique_2_${uuidv4()}`;
 
   try {
     const result1 = await new Step(client)

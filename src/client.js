@@ -77,6 +77,8 @@ class EZThrottle {
     if (idempotentKey) jobPayload.idempotent_key = idempotentKey;
     if (retryAt !== undefined) jobPayload.retry_at = retryAt;
 
+    console.log('[SDK] Sending jobPayload with idempotent_key:', jobPayload.idempotent_key);
+
     // Build proxy request
     const proxyPayload = {
       scope: 'customer',
