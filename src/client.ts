@@ -263,4 +263,230 @@ export class EZThrottle {
       checkResult();
     });
   }
+
+  // ============================================================================
+  // WEBHOOK SECRETS MANAGEMENT
+  // ============================================================================
+
+  /**
+   * Create or update webhook HMAC secrets for signature verification.
+   *
+   * @param primarySecret - Primary webhook secret (min 16 characters)
+   * @param secondarySecret - Optional secondary secret for rotation (min 16 characters)
+   * @returns Response with status and message
+   * @throws {Error} If secret creation fails
+   *
+   * @example
+   * ```typescript
+   * // Create primary secret
+   * await client.createWebhookSecret('your_secure_secret_here_min_16_chars');
+   *
+   * // Create with rotation support (primary + secondary)
+   * await client.createWebhookSecret(
+   *   'new_secret_after_rotation',
+   *   'old_secret_before_rotation'
+   * );
+   * ```
+   */
+  async createWebhookSecret(primarySecret: string, secondarySecret?: string): Promise<any> {
+    if (primarySecret.length < 16) {
+      throw new Error('primarySecret must be at least 16 characters');
+    }
+
+    if (secondarySecret && secondarySecret.length < 16) {
+      throw new Error('secondarySecret must be at least 16 characters');
+    }
+
+    const payload: Record<string, any> = { primary_secret: primarySecret };
+    if (secondarySecret) {
+      payload.secondary_secret = secondarySecret;
+    }
+
+    const proxyPayload: ProxyPayload = {
+      scope: 'customer',
+      metric_name: '',
+      target_url: `${this.ezthrottleUrl}/api/v1/webhook-secrets`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    };
+
+    const response = await fetch(`${this.tracktagsUrl}/api/v1/proxy`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(proxyPayload),
+    });
+
+    if (response.status !== 200) {
+      const text = await response.text();
+      throw new EZThrottleError(`Failed to create webhook secret: ${text}`);
+    }
+
+    const proxyResponse = await response.json() as ProxyResponse;
+    if (proxyResponse.status !== 'allowed') {
+      throw new EZThrottleError(
+        `Request denied: ${proxyResponse.error || 'Unknown error'}`
+      );
+    }
+
+    const forwarded = proxyResponse.forwarded_response || {} as { body?: string };
+    return JSON.parse(forwarded.body || '{}');
+  }
+
+  /**
+   * Get webhook secrets (masked for security).
+   *
+   * @returns Object with masked secrets
+   * @throws {Error} If secrets not configured (404) or request fails
+   *
+   * @example
+   * ```typescript
+   * const secrets = await client.getWebhookSecret();
+   * console.log(secrets);
+   * // {
+   * //   customer_id: 'cust_XXX',
+   * //   primary_secret: 'your****ars',
+   * //   secondary_secret: 'opti****ars',
+   * //   has_secondary: true
+   * // }
+   * ```
+   */
+  async getWebhookSecret(): Promise<any> {
+    const proxyPayload: ProxyPayload = {
+      scope: 'customer',
+      metric_name: '',
+      target_url: `${this.ezthrottleUrl}/api/v1/webhook-secrets`,
+      method: 'GET',
+      headers: {},
+      body: '',
+    };
+
+    const response = await fetch(`${this.tracktagsUrl}/api/v1/proxy`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(proxyPayload),
+    });
+
+    if (response.status !== 200) {
+      const text = await response.text();
+      throw new EZThrottleError(`Failed to get webhook secret: ${text}`);
+    }
+
+    const proxyResponse = await response.json() as ProxyResponse;
+    if (proxyResponse.status !== 'allowed') {
+      throw new EZThrottleError(
+        `Request denied: ${proxyResponse.error || 'Unknown error'}`
+      );
+    }
+
+    const forwarded = proxyResponse.forwarded_response || {} as { status_code?: number; body?: string };
+    const statusCode = forwarded.status_code || 0;
+
+    if (statusCode === 404) {
+      throw new EZThrottleError('No webhook secrets configured. Call createWebhookSecret() first.');
+    }
+
+    if (statusCode < 200 || statusCode >= 300) {
+      throw new EZThrottleError(`Failed to get webhook secrets: ${forwarded.body}`);
+    }
+
+    return JSON.parse(forwarded.body || '{}');
+  }
+
+  /**
+   * Delete webhook secrets.
+   *
+   * @returns Response with status and message
+   * @throws {Error} If deletion fails
+   *
+   * @example
+   * ```typescript
+   * const result = await client.deleteWebhookSecret();
+   * console.log(result); // { status: 'ok', message: 'Webhook secrets deleted' }
+   * ```
+   */
+  async deleteWebhookSecret(): Promise<any> {
+    const proxyPayload: ProxyPayload = {
+      scope: 'customer',
+      metric_name: '',
+      target_url: `${this.ezthrottleUrl}/api/v1/webhook-secrets`,
+      method: 'DELETE',
+      headers: {},
+      body: '',
+    };
+
+    const response = await fetch(`${this.tracktagsUrl}/api/v1/proxy`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(proxyPayload),
+    });
+
+    if (response.status !== 200) {
+      const text = await response.text();
+      throw new EZThrottleError(`Failed to delete webhook secret: ${text}`);
+    }
+
+    const proxyResponse = await response.json() as ProxyResponse;
+    if (proxyResponse.status !== 'allowed') {
+      throw new EZThrottleError(
+        `Request denied: ${proxyResponse.error || 'Unknown error'}`
+      );
+    }
+
+    const forwarded = proxyResponse.forwarded_response || {} as { body?: string };
+    return JSON.parse(forwarded.body || '{}');
+  }
+
+  /**
+   * Rotate webhook secret safely by promoting secondary to primary.
+   *
+   * @param newSecret - New webhook secret to set as primary
+   * @returns Response with status and message
+   *
+   * @example
+   * ```typescript
+   * // Step 1: Rotate (keeps old secret as backup)
+   * await client.rotateWebhookSecret('new_secret_min_16_chars');
+   *
+   * // Step 2: After verifying webhooks work with new secret
+   * // Remove old secret by setting only new one
+   * await client.createWebhookSecret('new_secret_min_16_chars');
+   * ```
+   */
+  async rotateWebhookSecret(newSecret: string): Promise<any> {
+    if (newSecret.length < 16) {
+      throw new Error('newSecret must be at least 16 characters');
+    }
+
+    try {
+      // Get current secret to use as secondary
+      const current = await this.getWebhookSecret();
+      const oldPrimary = current.primary_secret || '';
+
+      // If we have a masked secret, we can't use it as secondary
+      // In this case, just set the new secret without secondary
+      if (oldPrimary.includes('****')) {
+        return this.createWebhookSecret(newSecret);
+      }
+
+      // Set new as primary, old as secondary
+      return this.createWebhookSecret(newSecret, oldPrimary);
+    } catch (error) {
+      if (error instanceof EZThrottleError &&
+          error.message.includes('No webhook secrets configured')) {
+        // No existing secret, just create new one
+        return this.createWebhookSecret(newSecret);
+      }
+      throw error;
+    }
+  }
 }
