@@ -297,6 +297,106 @@ app.post('/webhook', (req, res) => {
 ```
 
 ## Mixed Workflow Chains (FRUGAL ↔ PERFORMANCE)
+## Webhook Security (HMAC Signatures)
+
+Protect webhooks from spoofing with HMAC-SHA256 signature verification.
+
+### Quick Setup
+
+```typescript
+import express from 'express';
+import { EZThrottle, verifyWebhookSignatureStrict, WebhookVerificationError } from 'ezthrottle';
+
+const app = express();
+const client = new EZThrottle({ apiKey: 'your_api_key' });
+const WEBHOOK_SECRET = 'your_secret_min_16_chars';
+
+// Create secret (one time)
+await client.createWebhookSecret('your_secret_min_16_chars');
+
+// Verify webhooks
+app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  try {
+    verifyWebhookSignatureStrict(
+      req.body,
+      req.headers['x-ezthrottle-signature'] as string,
+      WEBHOOK_SECRET
+    );
+    
+    const data = JSON.parse(req.body.toString());
+    console.log(`Job ${data.job_id}: ${data.status}`);
+    res.json({ ok: true });
+  } catch (error) {
+    if (error instanceof WebhookVerificationError) {
+      return res.status(401).json({ error: error.message });
+    }
+    throw error;
+  }
+});
+```
+
+### Verification Functions
+
+```typescript
+import { verifyWebhookSignature, tryVerifyWithSecrets } from 'ezthrottle';
+
+// Boolean verification
+const { verified, reason } = verifyWebhookSignature(payload, signature, secret);
+if (!verified) console.log(`Failed: ${reason}`);
+
+// Secret rotation support
+const result = tryVerifyWithSecrets(
+  payload, 
+  signature, 
+  'new_secret',
+  'old_secret'  // Optional
+);
+console.log(result.reason); // "valid_primary" or "valid_secondary"
+```
+
+### Manage Secrets
+
+```typescript
+// Create/update
+await client.createWebhookSecret('primary_secret', 'secondary_secret');
+
+// Get (masked)
+const secrets = await client.getWebhookSecret();
+// { primary_secret: 'prim****cret', has_secondary: true }
+
+// Rotate safely
+await client.rotateWebhookSecret('new_secret');
+
+// Delete
+await client.deleteWebhookSecret();
+```
+
+### Quick Commands (One-Liners)
+
+```bash
+# Create secret
+node -e "const {EZThrottle}=require('ezthrottle'); new EZThrottle({apiKey:'key'}).createWebhookSecret('secret').then(console.log)"
+
+# Get secrets
+node -e "const {EZThrottle}=require('ezthrottle'); new EZThrottle({apiKey:'key'}).getWebhookSecret().then(r=>console.log(JSON.stringify(r,null,2)))"
+
+# Rotate secret
+node -e "const {EZThrottle}=require('ezthrottle'); new EZThrottle({apiKey:'key'}).rotateWebhookSecret('new_secret').then(console.log)"
+
+# Delete
+node -e "const {EZThrottle}=require('ezthrottle'); new EZThrottle({apiKey:'key'}).deleteWebhookSecret().then(console.log)"
+
+# With env var
+export EZTHROTTLE_API_KEY="your_key"
+node -e "const {EZThrottle}=require('ezthrottle'); new EZThrottle({apiKey:process.env.EZTHROTTLE_API_KEY}).createWebhookSecret('secret').then(console.log)"
+```
+
+### Best Practices
+
+1. Always verify signatures in production
+2. Use 32+ character random secrets
+3. Rotate secrets periodically with primary + secondary
+4. Store secrets in environment variables
 
 Mix FRUGAL and PERFORMANCE steps in the same workflow to optimize for both cost and speed:
 
