@@ -462,6 +462,67 @@ export class EZThrottle {
    * await client.createWebhookSecret('new_secret_min_16_chars');
    * ```
    */
+  /**
+   * Try to forward request to EZThrottle, fall back to callback if EZThrottle is unreachable.
+   *
+   * This makes EZThrottle a reliability LAYER, not a single point of failure.
+   * If EZThrottle is down, you just lose the extra reliability features and
+   * fall back to your existing solution.
+   *
+   * @param fallback - Callback function to execute if EZThrottle is unreachable
+   * @param options - Job options (same as submitJob)
+   * @returns Either EZThrottle job response or the fallback function's return value
+   *
+   * @example
+   * ```typescript
+   * // If EZThrottle is down, fall back to direct HTTP call
+   * const result = await client.forwardOrFallback(
+   *   async () => {
+   *     const response = await fetch('https://api.stripe.com/charges', {
+   *       method: 'POST',
+   *       headers: { 'Authorization': 'Bearer sk_live_...' },
+   *       body: JSON.stringify({ amount: 1000 })
+   *     });
+   *     return response.json();
+   *   },
+   *   {
+   *     url: 'https://api.stripe.com/charges',
+   *     method: 'POST',
+   *     headers: { 'Authorization': 'Bearer sk_live_...' },
+   *     body: JSON.stringify({ amount: 1000 }),
+   *     webhooks: [{ url: 'https://your-app.com/webhook' }]
+   *   }
+   * );
+   * ```
+   *
+   * Note: The fallback is ONLY called when EZThrottle itself is unreachable
+   * (connection errors, timeouts). It is NOT called for rate limiting or
+   * other EZThrottle errors - those indicate EZThrottle is working.
+   */
+  async forwardOrFallback<T>(
+    fallback: () => Promise<T>,
+    options: SubmitJobParams
+  ): Promise<any | T> {
+    try {
+      return await this.submitJob(options);
+    } catch (error: any) {
+      // Check if it's a network/connection error
+      if (
+        error.code === 'ECONNREFUSED' ||
+        error.code === 'ENOTFOUND' ||
+        error.code === 'ETIMEDOUT' ||
+        error.code === 'ECONNRESET' ||
+        error.name === 'AbortError' ||
+        error.type === 'system'
+      ) {
+        // EZThrottle is unreachable - use fallback
+        return fallback();
+      }
+      // Re-throw other errors (rate limiting, validation, etc.)
+      throw error;
+    }
+  }
+
   async rotateWebhookSecret(newSecret: string): Promise<any> {
     if (newSecret.length < 16) {
       throw new Error('newSecret must be at least 16 characters');
